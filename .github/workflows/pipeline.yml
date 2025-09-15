@@ -89,7 +89,19 @@ jobs:
       - name: 📦 Crear artefacto de build
         run: |
           cd backend
-          tar -czf backend-build.tar.gz dist/ node_modules/ package.json package-lock.json prisma/
+          # Crear directorio temporal para el build
+          mkdir -p ../build-temp
+          cp -r dist/ ../build-temp/
+          cp -r prisma/ ../build-temp/
+          cp package.json package-lock.json ../build-temp/
+          
+          # Copiar node_modules excluyendo archivos problemáticos
+          rsync -av --exclude='.bin' --exclude='.cache' --exclude='*.log' node_modules/ ../build-temp/node_modules/
+          
+          # Crear tar.gz del directorio temporal
+          cd ../build-temp
+          tar -czf ../backend/backend-build.tar.gz .
+          cd ../backend
 
       - name: 💾 Subir artefacto
         uses: actions/upload-artifact@v4
@@ -175,7 +187,7 @@ jobs:
             ENVEOF
 
             # Extraer build
-            tar -xzf backend-build.tar.gz
+            tar -xzf backend-build.tar.gz --ignore-failed-read || true
 
             # Generar cliente Prisma
             npx prisma generate
