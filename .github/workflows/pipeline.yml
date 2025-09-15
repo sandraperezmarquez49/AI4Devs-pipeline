@@ -167,13 +167,14 @@ jobs:
             sudo systemctl status postgresql
             sudo -u postgres pg_isready -h localhost -p 5432 || echo "PostgreSQL no está listo aún"
             
-            # Configurar contraseña para usuario postgres
+            # Configurar contraseña para usuario postgres usando PGPASSWORD
             echo "=== Configurando contraseña para usuario postgres ==="
+            export PGPASSWORD='postgres123'
             sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres123';" || echo "No se pudo configurar contraseña para postgres"
 
             # Configurar usuario y base de datos
             echo "=== Configurando usuario y base de datos ==="
-            # Usar sudo -u postgres para evitar problemas de autenticación
+            # Usar sudo -u postgres con PGPASSWORD para evitar problemas de autenticación
             sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || echo "Usuario no existía"
             sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';"
             sudo -u postgres psql -c "DROP DATABASE IF EXISTS LTIdb;" || echo "Base de datos no existía"
@@ -210,7 +211,7 @@ jobs:
             # TYPE  DATABASE        USER            ADDRESS                 METHOD
             
             # "local" is for Unix domain socket connections only
-            local   all             all                                     md5
+            local   all             all                                     trust
             
             # IPv4 local connections:
             host    all             all             127.0.0.1/32            md5
@@ -221,7 +222,7 @@ jobs:
             
             # Allow replication connections from localhost, by a user with the
             # replication privilege.
-            local   replication     all                                     md5
+            local   replication     all                                     trust
             host    replication     all             127.0.0.1/32            md5
             host    replication     all             ::1/128                 md5
             EOF
@@ -326,6 +327,7 @@ jobs:
 
             # Verificar conexión con postgres (usuario administrador)
             echo "=== Verificando conexión con postgres ==="
+            export PGPASSWORD='postgres123'
             sudo -u postgres psql -c "SELECT version();" || echo "Error de conexión con postgres"
             
             # Verificar que el usuario LTIdbUser existe
@@ -343,6 +345,7 @@ jobs:
             
             # Si la conexión falla, recrear el usuario con permisos completos
             echo "=== Recreando usuario LTIdbUser con permisos completos ==="
+            export PGPASSWORD='postgres123'
             sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || true
             sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq' SUPERUSER CREATEDB CREATEROLE LOGIN;"
             sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;"
