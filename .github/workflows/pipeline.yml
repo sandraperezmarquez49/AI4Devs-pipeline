@@ -283,7 +283,9 @@ jobs:
             pwd
             ls -la
 
-            # Crear archivo .env con variables correctas
+            # Crear archivo .env con variables correctas (sobrescribir si existe)
+            echo "=== Creando archivo .env con valores directos ==="
+            rm -f .env
             cat > .env << 'ENVEOF'
             DB_PASSWORD=D1ymf8wyQEGthFR1E9xhCq
             DB_USER=LTIdbUser
@@ -353,7 +355,19 @@ jobs:
             # Aplicar esquema a base de datos
             echo "=== Aplicando esquema a base de datos ==="
             echo "DATABASE_URL actual: $DATABASE_URL"
+            
+            # Verificar que el archivo .env tiene el formato correcto
+            echo "=== Verificando formato del archivo .env ==="
+            grep "DATABASE_URL=" .env
+            
+            # Exportar variables de entorno para Prisma
             export PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq
+            export DB_PASSWORD=D1ymf8wyQEGthFR1E9xhCq
+            export DB_USER=LTIdbUser
+            export DB_NAME=LTIdb
+            export DB_PORT=5432
+            export DATABASE_URL="postgresql://LTIdbUser:D1ymf8wyQEGthFR1E9xhCq@localhost:5432/LTIdb"
+            
             npx prisma db push --accept-data-loss --force-reset
             echo "=== Esquema aplicado exitosamente ==="
 
