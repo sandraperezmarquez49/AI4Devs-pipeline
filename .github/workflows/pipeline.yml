@@ -175,18 +175,18 @@ jobs:
             # Configurar usuario y base de datos
             echo "=== Configurando usuario y base de datos ==="
             # Usar sudo -u postgres con PGPASSWORD para evitar problemas de autenticación
-            sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || echo "Usuario no existía"
-            sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';"
-            sudo -u postgres psql -c "DROP DATABASE IF EXISTS LTIdb;" || echo "Base de datos no existía"
-            sudo -u postgres psql -c "CREATE DATABASE LTIdb OWNER LTIdbUser;"
-            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;"
-            sudo -u postgres psql -c "ALTER USER LTIdbUser CREATEDB;"
-            sudo -u postgres psql -c "ALTER USER LTIdbUser WITH SUPERUSER;"
+            sudo -u postgres psql -c "DROP USER IF EXISTS \"LTIdbUser\";" || echo "Usuario no existía"
+            sudo -u postgres psql -c "CREATE USER \"LTIdbUser\" WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';"
+            sudo -u postgres psql -c "DROP DATABASE IF EXISTS \"LTIdb\";" || echo "Base de datos no existía"
+            sudo -u postgres psql -c "CREATE DATABASE \"LTIdb\" OWNER \"LTIdbUser\";"
+            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE \"LTIdb\" TO \"LTIdbUser\";"
+            sudo -u postgres psql -c "ALTER USER \"LTIdbUser\" CREATEDB;"
+            sudo -u postgres psql -c "ALTER USER \"LTIdbUser\" WITH SUPERUSER;"
             
             # Conectar a la base de datos específica y dar permisos
-            sudo -u postgres psql -d LTIdb -c "GRANT ALL PRIVILEGES ON SCHEMA public TO LTIdbUser;"
-            sudo -u postgres psql -d LTIdb -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO LTIdbUser;"
-            sudo -u postgres psql -d LTIdb -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO LTIdbUser;"
+            sudo -u postgres psql -d "LTIdb" -c "GRANT ALL PRIVILEGES ON SCHEMA public TO \"LTIdbUser\";"
+            sudo -u postgres psql -d "LTIdb" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO \"LTIdbUser\";"
+            sudo -u postgres psql -d "LTIdb" -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO \"LTIdbUser\";"
             
             # Verificar que el usuario puede conectarse
             echo "=== Verificando conexión del usuario ==="
@@ -346,9 +346,9 @@ jobs:
             # Si la conexión falla, recrear el usuario con permisos completos
             echo "=== Recreando usuario LTIdbUser con permisos completos ==="
             export PGPASSWORD='postgres123'
-            sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || true
-            sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq' SUPERUSER CREATEDB CREATEROLE LOGIN;"
-            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;"
+            sudo -u postgres psql -c "DROP USER IF EXISTS \"LTIdbUser\";" || true
+            sudo -u postgres psql -c "CREATE USER \"LTIdbUser\" WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq' SUPERUSER CREATEDB CREATEROLE LOGIN;"
+            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE \"LTIdb\" TO \"LTIdbUser\";"
             
             # Aplicar esquema a base de datos
             echo "=== Aplicando esquema a base de datos ==="
