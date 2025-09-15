@@ -378,22 +378,40 @@ jobs:
 
             # Iniciar aplicación en background
             echo "=== Iniciando aplicación ==="
+            
+            # Verificar que tenemos los archivos necesarios
+            echo "=== Verificando archivos de la aplicación ==="
+            ls -la package.json
+            ls -la dist/
+            
+            # Iniciar la aplicación
             nohup npm start > backend.log 2>&1 &
             
             # Guardar el PID del proceso
             echo $! > backend.pid
+            echo "PID guardado: $(cat backend.pid)"
 
             # Esperar y verificar que esté funcionando
             echo "=== Esperando a que la aplicación esté lista ==="
-            sleep 15
+            sleep 20
             
             # Verificar que el proceso esté ejecutándose
+            echo "=== Verificando proceso de la aplicación ==="
             ps aux | grep -E "node.*3010" | grep -v grep || echo "Proceso no encontrado"
             
+            # Verificar que el puerto esté en uso
+            echo "=== Verificando puerto 3010 ==="
+            netstat -tlnp | grep :3010 || echo "Puerto 3010 no está en uso"
+            
+            # Mostrar logs para debugging
+            echo "=== Logs de la aplicación ==="
+            tail -30 backend.log
+            
             # Verificar que responda
-            curl -f http://localhost:3010/ || {
-              echo "La aplicación no responde, mostrando logs:"
-              tail -20 backend.log
+            echo "=== Verificando respuesta de la aplicación ==="
+            curl -v http://localhost:3010/ || {
+              echo "La aplicación no responde, mostrando logs completos:"
+              cat backend.log
               exit 1
             }
 
