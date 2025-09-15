@@ -52,8 +52,7 @@ jobs:
           cd backend
           echo "DATABASE_URL=\"postgresql://postgres:postgres@localhost:5432/test_db\"" > .env
           npx prisma generate
-          # Aplicar schema a la base de datos de test
-          npx prisma db push --accept-data-loss
+          npx prisma db push
 
       - name: 🧪 Ejecutar tests de backend
         run: |
@@ -90,19 +89,7 @@ jobs:
       - name: 📦 Crear artefacto de build
         run: |
           cd backend
-          # Crear directorio temporal para el build
-          mkdir -p ../build-temp
-          cp -r dist/ ../build-temp/
-          cp -r prisma/ ../build-temp/
-          cp package.json package-lock.json ../build-temp/
-          
-          # Copiar node_modules excluyendo archivos problemáticos
-          rsync -av --exclude='.bin' --exclude='.cache' --exclude='*.log' node_modules/ ../build-temp/node_modules/
-          
-          # Crear tar.gz del directorio temporal
-          cd ../build-temp
-          tar -czf ../backend/backend-build.tar.gz .
-          cd ../backend
+          tar -czf backend-build.tar.gz dist/ node_modules/ package.json package-lock.json prisma/
 
       - name: 💾 Subir artefacto
         uses: actions/upload-artifact@v4
@@ -141,109 +128,24 @@ jobs:
             # Instalar PostgreSQL
             sudo dnf install -y postgresql15-server postgresql15
 
-            # Verificar si PostgreSQL ya está configurado
-            if [ ! -d "/var/lib/pgsql/data" ] || [ ! "$(ls -A /var/lib/pgsql/data)" ]; then
-              echo "=== Inicializando PostgreSQL por primera vez ==="
-              sudo postgresql-setup --initdb
-            else
-              echo "=== PostgreSQL ya está configurado, limpiando configuración incorrecta ==="
-              # Detener PostgreSQL
-              sudo systemctl stop postgresql || true
-              # Hacer backup de la configuración actual
-              sudo cp -r /var/lib/pgsql/data /var/lib/pgsql/data.backup.$(date +%s) || true
-              # Limpiar directorio de datos
-              sudo rm -rf /var/lib/pgsql/data/*
-              # Recrear configuración
-              sudo postgresql-setup --initdb
-            fi
-            
-            # Habilitar y iniciar PostgreSQL
+            # Inicializar PostgreSQL
+            sudo postgresql-setup --initdb
             sudo systemctl enable postgresql
             sudo systemctl start postgresql
-            
-            # Esperar a que PostgreSQL esté completamente iniciado
-            echo "=== Esperando a que PostgreSQL esté listo ==="
-            sleep 15
-            sudo systemctl status postgresql
-            sudo -u postgres pg_isready -h localhost -p 5432 || echo "PostgreSQL no está listo aún"
-            
-            # Configurar contraseña para usuario postgres usando PGPASSWORD
-            echo "=== Configurando contraseña para usuario postgres ==="
-            export PGPASSWORD='postgres123'
-            sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres123';" || echo "No se pudo configurar contraseña para postgres"
 
             # Configurar usuario y base de datos
-            echo "=== Configurando usuario y base de datos ==="
-            # Usar sudo -u postgres con PGPASSWORD para evitar problemas de autenticación
-            sudo -u postgres psql -c "DROP USER IF EXISTS \"LTIdbUser\";" || echo "Usuario no existía"
-            sudo -u postgres psql -c "CREATE USER \"LTIdbUser\" WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';"
-            sudo -u postgres psql -c "DROP DATABASE IF EXISTS \"LTIdb\";" || echo "Base de datos no existía"
-            sudo -u postgres psql -c "CREATE DATABASE \"LTIdb\" OWNER \"LTIdbUser\";"
-            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE \"LTIdb\" TO \"LTIdbUser\";"
-            sudo -u postgres psql -c "ALTER USER \"LTIdbUser\" CREATEDB;"
-            sudo -u postgres psql -c "ALTER USER \"LTIdbUser\" WITH SUPERUSER;"
-            
-            # Conectar a la base de datos específica y dar permisos
-            sudo -u postgres psql -d "LTIdb" -c "GRANT ALL PRIVILEGES ON SCHEMA public TO \"LTIdbUser\";"
-            sudo -u postgres psql -d "LTIdb" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO \"LTIdbUser\";"
-            sudo -u postgres psql -d "LTIdb" -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO \"LTIdbUser\";"
-            
-            # Verificar que el usuario puede conectarse
-            echo "=== Verificando conexión del usuario ==="
-            sudo -u postgres psql -c "SELECT usename FROM pg_user WHERE usename = 'LTIdbUser';"
-            
-            # Verificar que el usuario y base de datos se crearon correctamente
-            echo "=== Verificando configuración ==="
-            sudo -u postgres psql -c "\du" | grep LTIdbUser || echo "Usuario LTIdbUser no encontrado"
-            sudo -u postgres psql -c "\l" | grep LTIdb || echo "Base de datos LTIdb no encontrada"
+            sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';" || true
+            sudo -u postgres psql -c "CREATE DATABASE LTIdb OWNER LTIdbUser;" || true
+            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;" || true
 
-            # Configurar PostgreSQL para conexiones externas y autenticación
-            echo "=== Configurando PostgreSQL para conexiones externas ==="
-            
-            # Configurar postgresql.conf
+            # Configurar PostgreSQL para conexiones externas
             sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /var/lib/pgsql/data/postgresql.conf
-            
-            # Hacer backup del archivo pg_hba.conf
-            sudo cp /var/lib/pgsql/data/pg_hba.conf /var/lib/pgsql/data/pg_hba.conf.backup
-            
-            # Crear nuevo archivo pg_hba.conf con configuración correcta
-            sudo tee /var/lib/pgsql/data/pg_hba.conf > /dev/null << 'EOF'
-            # TYPE  DATABASE        USER            ADDRESS                 METHOD
-            
-            # "local" is for Unix domain socket connections only
-            local   all             all                                     trust
-            
-            # IPv4 local connections:
-            host    all             all             127.0.0.1/32            md5
-            host    all             all             0.0.0.0/0               md5
-            
-            # IPv6 local connections:
-            host    all             all             ::1/128                 md5
-            
-            # Allow replication connections from localhost, by a user with the
-            # replication privilege.
-            local   replication     all                                     trust
-            host    replication     all             127.0.0.1/32            md5
-            host    replication     all             ::1/128                 md5
-            EOF
-
-            # Verificar configuración
-            echo "=== Verificando configuración de pg_hba.conf ==="
-            sudo cat /var/lib/pgsql/data/pg_hba.conf
+            sudo sed -i "s/local   all             all                                     peer/local   all             all                                     md5/" /var/lib/pgsql/data/pg_hba.conf
+            echo "host    all             all             0.0.0.0/0               md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
 
             # Reiniciar PostgreSQL
-            echo "=== Reiniciando PostgreSQL ==="
             sudo systemctl restart postgresql
-            sleep 10
-            sudo systemctl status postgresql
-            
-            # Verificar que PostgreSQL esté funcionando
-            echo "=== Verificando PostgreSQL ==="
-            sudo -u postgres pg_isready -h localhost -p 5432
-            
-            # Probar conexión con postgres
-            sudo -u postgres psql -c "SELECT version();" || echo "Error de conexión"
-            
+
             echo "PostgreSQL configurado exitosamente"
 
       - name: 🚀 Desplegar backend con easingthemes/ssh-deploy
@@ -262,158 +164,34 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
-            # Asegurar que el directorio home del usuario existe
-            sudo mkdir -p /home/${{ secrets.EC2_USER }}
-            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/${{ secrets.EC2_USER }}
-            sudo chmod 755 /home/${{ secrets.EC2_USER }}
-            
-            # Asegurar que el directorio de la aplicación existe y tiene permisos correctos
-            sudo mkdir -p /home/${{ secrets.EC2_USER }}/lti-backend
-            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/${{ secrets.EC2_USER }}/lti-backend
-            sudo chmod 755 /home/${{ secrets.EC2_USER }}/lti-backend
-            
-            # Verificar permisos del directorio home
-            echo "=== Verificando permisos del directorio home ==="
-            ls -la /home/ | grep ${{ secrets.EC2_USER }}
-            
-            # Cambiar al directorio correcto
             cd /home/${{ secrets.EC2_USER }}/lti-backend
 
-            # Verificar que estamos en el directorio correcto
-            pwd
-            ls -la
-
-            # Crear archivo .env con variables correctas (sobrescribir si existe)
-            echo "=== Creando archivo .env con valores directos ==="
-            rm -f .env
+            # Crear archivo .env
             cat > .env << 'ENVEOF'
-            DB_PASSWORD=D1ymf8wyQEGthFR1E9xhCq
-            DB_USER=LTIdbUser
-            DB_NAME=LTIdb
-            DB_PORT=5432
             DATABASE_URL="postgresql://LTIdbUser:D1ymf8wyQEGthFR1E9xhCq@localhost:5432/LTIdb"
             HOST=0.0.0.0
             PORT=3010
             NODE_ENV=production
             ENVEOF
 
-            # Mostrar el contenido del archivo .env para verificación
-            echo "=== Contenido del archivo .env ==="
-            cat .env
-
-            # Extraer build si existe
-            if [ -f "backend-build.tar.gz" ]; then
-              echo "=== Extrayendo build ==="
-              tar -xzf backend-build.tar.gz --ignore-failed-read || true
-            else
-              echo "=== Archivo backend-build.tar.gz no encontrado, continuando ==="
-            fi
-
-            # Verificar que tenemos los archivos necesarios
-            ls -la
+            # Extraer build
+            tar -xzf backend-build.tar.gz
 
             # Generar cliente Prisma
-            echo "=== Generando cliente Prisma ==="
             npx prisma generate
 
-            # Esperar a que PostgreSQL esté completamente listo
-            echo "=== Esperando a que PostgreSQL esté listo ==="
-            sleep 10
-            
-            # Verificar que PostgreSQL esté funcionando
-            sudo -u postgres pg_isready -h localhost -p 5432 || {
-              echo "PostgreSQL no está listo, intentando reiniciar..."
-              sudo systemctl restart postgresql
-              sleep 10
-            }
-
-            # Verificar conexión con postgres (usuario administrador)
-            echo "=== Verificando conexión con postgres ==="
-            export PGPASSWORD='postgres123'
-            sudo -u postgres psql -c "SELECT version();" || echo "Error de conexión con postgres"
-            
-            # Verificar que el usuario LTIdbUser existe
-            echo "=== Verificando usuario LTIdbUser ==="
-            sudo -u postgres psql -c "SELECT usename FROM pg_user WHERE usename = 'LTIdbUser';"
-            
-            # Verificar que la base de datos LTIdb existe
-            echo "=== Verificando base de datos LTIdb ==="
-            sudo -u postgres psql -c "SELECT datname FROM pg_database WHERE datname = 'LTIdb';"
-            
-            # Probar conexión con LTIdbUser usando PGPASSWORD
-            echo "=== Probando conexión con LTIdbUser ==="
-            export PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq
-            psql -h localhost -U LTIdbUser -d LTIdb -c "SELECT 1;" || echo "Error de conexión con LTIdbUser"
-            
-            # Si la conexión falla, recrear el usuario con permisos completos
-            echo "=== Recreando usuario LTIdbUser con permisos completos ==="
-            export PGPASSWORD='postgres123'
-            sudo -u postgres psql -c "DROP USER IF EXISTS \"LTIdbUser\";" || true
-            sudo -u postgres psql -c "CREATE USER \"LTIdbUser\" WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq' SUPERUSER CREATEDB CREATEROLE LOGIN;"
-            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE \"LTIdb\" TO \"LTIdbUser\";"
-            
             # Aplicar esquema a base de datos
-            echo "=== Aplicando esquema a base de datos ==="
-            echo "DATABASE_URL actual: $DATABASE_URL"
-            
-            # Verificar que el archivo .env tiene el formato correcto
-            echo "=== Verificando formato del archivo .env ==="
-            grep "DATABASE_URL=" .env
-            
-            # Exportar variables de entorno para Prisma
-            export PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq
-            export DB_PASSWORD=D1ymf8wyQEGthFR1E9xhCq
-            export DB_USER=LTIdbUser
-            export DB_NAME=LTIdb
-            export DB_PORT=5432
-            export DATABASE_URL="postgresql://LTIdbUser:D1ymf8wyQEGthFR1E9xhCq@localhost:5432/LTIdb"
-            
-            npx prisma db push --accept-data-loss --force-reset
-            echo "=== Esquema aplicado exitosamente ==="
+            npx prisma db push
 
             # Detener proceso anterior si existe
-            echo "=== Deteniendo procesos anteriores ==="
             pkill -f "node.*3010" || true
-            sleep 5
 
             # Iniciar aplicación en background
-            echo "=== Iniciando aplicación ==="
-            
-            # Verificar que tenemos los archivos necesarios
-            echo "=== Verificando archivos de la aplicación ==="
-            ls -la package.json
-            ls -la dist/
-            
-            # Iniciar la aplicación
             nohup npm start > backend.log 2>&1 &
-            
-            # Guardar el PID del proceso
-            echo $! > backend.pid
-            echo "PID guardado: $(cat backend.pid)"
 
             # Esperar y verificar que esté funcionando
-            echo "=== Esperando a que la aplicación esté lista ==="
-            sleep 20
-            
-            # Verificar que el proceso esté ejecutándose
-            echo "=== Verificando proceso de la aplicación ==="
-            ps aux | grep -E "node.*3010" | grep -v grep || echo "Proceso no encontrado"
-            
-            # Verificar que el puerto esté en uso
-            echo "=== Verificando puerto 3010 ==="
-            netstat -tlnp | grep :3010 || echo "Puerto 3010 no está en uso"
-            
-            # Mostrar logs para debugging
-            echo "=== Logs de la aplicación ==="
-            tail -30 backend.log
-            
-            # Verificar que responda
-            echo "=== Verificando respuesta de la aplicación ==="
-            curl -v http://localhost:3010/ || {
-              echo "La aplicación no responde, mostrando logs completos:"
-              cat backend.log
-              exit 1
-            }
+            sleep 10
+            curl -f http://localhost:3010/ || exit 1
 
             echo "Backend desplegado exitosamente en puerto 3010"
 
