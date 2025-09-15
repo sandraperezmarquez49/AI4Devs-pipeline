@@ -145,6 +145,12 @@ jobs:
             sudo postgresql-setup --initdb
             sudo systemctl enable postgresql
             sudo systemctl start postgresql
+            
+            # Esperar a que PostgreSQL esté completamente iniciado
+            echo "=== Esperando a que PostgreSQL esté listo ==="
+            sleep 10
+            sudo systemctl status postgresql
+            sudo -u postgres pg_isready -h localhost -p 5432 || echo "PostgreSQL no está listo aún"
 
             # Configurar usuario y base de datos
             echo "=== Configurando usuario y base de datos ==="
@@ -162,13 +168,21 @@ jobs:
             sudo -u postgres psql -c "\l" | grep LTIdb || echo "Base de datos LTIdb no encontrada"
 
             # Configurar PostgreSQL para conexiones externas
+            echo "=== Configurando PostgreSQL para conexiones externas ==="
             sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /var/lib/pgsql/data/postgresql.conf
             sudo sed -i "s/local   all             all                                     peer/local   all             all                                     md5/" /var/lib/pgsql/data/pg_hba.conf
             echo "host    all             all             0.0.0.0/0               md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
+            echo "host    all             all             127.0.0.1/32            md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
 
             # Reiniciar PostgreSQL
+            echo "=== Reiniciando PostgreSQL ==="
             sudo systemctl restart postgresql
-
+            sleep 5
+            sudo systemctl status postgresql
+            
+            # Verificar que PostgreSQL esté funcionando
+            echo "=== Verificando PostgreSQL ==="
+            sudo -u postgres pg_isready -h localhost -p 5432
             echo "PostgreSQL configurado exitosamente"
 
       - name: 🚀 Desplegar backend con easingthemes/ssh-deploy
@@ -203,6 +217,10 @@ jobs:
             # Generar cliente Prisma
             npx prisma generate
 
+            # Verificar conexión antes de aplicar esquema
+            echo "=== Verificando conexión a base de datos ==="
+            PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq psql -h localhost -U LTIdbUser -d LTIdb -c "SELECT 1;" || echo "Error de conexión"
+            
             # Aplicar esquema a base de datos
             echo "=== Aplicando esquema a base de datos ==="
             echo "DATABASE_URL actual: $DATABASE_URL"
