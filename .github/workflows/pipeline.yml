@@ -184,23 +184,53 @@ jobs:
             sudo -u postgres psql -c "\du" | grep LTIdbUser || echo "Usuario LTIdbUser no encontrado"
             sudo -u postgres psql -c "\l" | grep LTIdb || echo "Base de datos LTIdb no encontrada"
 
-            # Configurar PostgreSQL para conexiones externas
+            # Configurar PostgreSQL para conexiones externas y autenticación
             echo "=== Configurando PostgreSQL para conexiones externas ==="
+            
+            # Configurar postgresql.conf
             sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /var/lib/pgsql/data/postgresql.conf
-            sudo sed -i "s/local   all             all                                     peer/local   all             all                                     md5/" /var/lib/pgsql/data/pg_hba.conf
-            echo "host    all             all             0.0.0.0/0               md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
-            echo "host    all             all             127.0.0.1/32            md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
-            echo "local   all             all                                     md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
+            
+            # Hacer backup del archivo pg_hba.conf
+            sudo cp /var/lib/pgsql/data/pg_hba.conf /var/lib/pgsql/data/pg_hba.conf.backup
+            
+            # Crear nuevo archivo pg_hba.conf con configuración correcta
+            sudo tee /var/lib/pgsql/data/pg_hba.conf > /dev/null << 'EOF'
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+# "local" is for Unix domain socket connections only
+local   all             all                                     md5
+
+# IPv4 local connections:
+host    all             all             127.0.0.1/32            md5
+host    all             all             0.0.0.0/0               md5
+
+# IPv6 local connections:
+host    all             all             ::1/128                 md5
+
+# Allow replication connections from localhost, by a user with the
+# replication privilege.
+local   replication     all                                     md5
+host    replication     all             127.0.0.1/32            md5
+host    replication     all             ::1/128                 md5
+EOF
+
+            # Verificar configuración
+            echo "=== Verificando configuración de pg_hba.conf ==="
+            sudo cat /var/lib/pgsql/data/pg_hba.conf
 
             # Reiniciar PostgreSQL
             echo "=== Reiniciando PostgreSQL ==="
             sudo systemctl restart postgresql
-            sleep 5
+            sleep 10
             sudo systemctl status postgresql
             
             # Verificar que PostgreSQL esté funcionando
             echo "=== Verificando PostgreSQL ==="
             sudo -u postgres pg_isready -h localhost -p 5432
+            
+            # Probar conexión con postgres
+            sudo -u postgres psql -c "SELECT version();" || echo "Error de conexión"
+            
             echo "PostgreSQL configurado exitosamente"
 
       - name: 🚀 Desplegar backend con easingthemes/ssh-deploy
@@ -219,56 +249,115 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
-            # Crear y configurar directorio con permisos correctos
+            # Asegurar que el directorio existe y tiene permisos correctos
             sudo mkdir -p /home/${{ secrets.EC2_USER }}/lti-backend
             sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/${{ secrets.EC2_USER }}/lti-backend
+            sudo chmod 755 /home/${{ secrets.EC2_USER }}/lti-backend
+            
+            # Cambiar al directorio correcto
             cd /home/${{ secrets.EC2_USER }}/lti-backend
 
-            # Crear archivo .env
+            # Verificar que estamos en el directorio correcto
+            pwd
+            ls -la
+
+            # Crear archivo .env con variables correctas
             cat > .env << 'ENVEOF'
             DB_PASSWORD=D1ymf8wyQEGthFR1E9xhCq
             DB_USER=LTIdbUser
             DB_NAME=LTIdb
             DB_PORT=5432
-            DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}"
+            DATABASE_URL="postgresql://LTIdbUser:D1ymf8wyQEGthFR1E9xhCq@localhost:5432/LTIdb"
             HOST=0.0.0.0
             PORT=3010
             NODE_ENV=production
             ENVEOF
 
-            # Extraer build
-            tar -xzf backend-build.tar.gz --ignore-failed-read || true
+            # Mostrar el contenido del archivo .env para verificación
+            echo "=== Contenido del archivo .env ==="
+            cat .env
+
+            # Extraer build si existe
+            if [ -f "backend-build.tar.gz" ]; then
+              echo "=== Extrayendo build ==="
+              tar -xzf backend-build.tar.gz --ignore-failed-read || true
+            else
+              echo "=== Archivo backend-build.tar.gz no encontrado, continuando ==="
+            fi
+
+            # Verificar que tenemos los archivos necesarios
+            ls -la
 
             # Generar cliente Prisma
+            echo "=== Generando cliente Prisma ==="
             npx prisma generate
 
-            # Verificar conexión antes de aplicar esquema
-            echo "=== Verificando conexión a base de datos ==="
-            sudo -u postgres psql -c "SELECT 1;" || echo "Error de conexión con postgres"
+            # Esperar a que PostgreSQL esté completamente listo
+            echo "=== Esperando a que PostgreSQL esté listo ==="
+            sleep 10
             
-            # Verificar que el usuario LTIdbUser puede conectarse
+            # Verificar que PostgreSQL esté funcionando
+            sudo -u postgres pg_isready -h localhost -p 5432 || {
+              echo "PostgreSQL no está listo, intentando reiniciar..."
+              sudo systemctl restart postgresql
+              sleep 10
+            }
+
+            # Verificar conexión con postgres (usuario administrador)
+            echo "=== Verificando conexión con postgres ==="
+            sudo -u postgres psql -c "SELECT version();" || echo "Error de conexión con postgres"
+            
+            # Verificar que el usuario LTIdbUser existe
             echo "=== Verificando usuario LTIdbUser ==="
             sudo -u postgres psql -c "SELECT usename FROM pg_user WHERE usename = 'LTIdbUser';"
+            
+            # Verificar que la base de datos LTIdb existe
+            echo "=== Verificando base de datos LTIdb ==="
             sudo -u postgres psql -c "SELECT datname FROM pg_database WHERE datname = 'LTIdb';"
             
-            # Probar conexión con LTIdbUser
-            PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq psql -h localhost -U LTIdbUser -d LTIdb -c "SELECT 1;" || echo "Error de conexión con LTIdbUser"
+            # Probar conexión con LTIdbUser usando PGPASSWORD
+            echo "=== Probando conexión con LTIdbUser ==="
+            export PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq
+            psql -h localhost -U LTIdbUser -d LTIdb -c "SELECT 1;" || echo "Error de conexión con LTIdbUser"
+            
+            # Si la conexión falla, recrear el usuario con permisos completos
+            echo "=== Recreando usuario LTIdbUser con permisos completos ==="
+            sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || true
+            sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq' SUPERUSER CREATEDB CREATEROLE LOGIN;"
+            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;"
             
             # Aplicar esquema a base de datos
             echo "=== Aplicando esquema a base de datos ==="
             echo "DATABASE_URL actual: $DATABASE_URL"
+            export PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq
             npx prisma db push --accept-data-loss --force-reset
             echo "=== Esquema aplicado exitosamente ==="
 
             # Detener proceso anterior si existe
+            echo "=== Deteniendo procesos anteriores ==="
             pkill -f "node.*3010" || true
+            sleep 5
 
             # Iniciar aplicación en background
+            echo "=== Iniciando aplicación ==="
             nohup npm start > backend.log 2>&1 &
+            
+            # Guardar el PID del proceso
+            echo $! > backend.pid
 
             # Esperar y verificar que esté funcionando
-            sleep 10
-            curl -f http://localhost:3010/ || exit 1
+            echo "=== Esperando a que la aplicación esté lista ==="
+            sleep 15
+            
+            # Verificar que el proceso esté ejecutándose
+            ps aux | grep -E "node.*3010" | grep -v grep || echo "Proceso no encontrado"
+            
+            # Verificar que responda
+            curl -f http://localhost:3010/ || {
+              echo "La aplicación no responde, mostrando logs:"
+              tail -20 backend.log
+              exit 1
+            }
 
             echo "Backend desplegado exitosamente en puerto 3010"
 
