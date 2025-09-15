@@ -141,8 +141,15 @@ jobs:
             # Instalar PostgreSQL
             sudo dnf install -y postgresql15-server postgresql15
 
-            # Inicializar PostgreSQL
-            sudo postgresql-setup --initdb
+            # Verificar si PostgreSQL ya está configurado
+            if [ ! -d "/var/lib/pgsql/data" ] || [ ! "$(ls -A /var/lib/pgsql/data)" ]; then
+              echo "=== Inicializando PostgreSQL por primera vez ==="
+              sudo postgresql-setup --initdb
+            else
+              echo "=== PostgreSQL ya está configurado, saltando inicialización ==="
+            fi
+            
+            # Habilitar y iniciar PostgreSQL
             sudo systemctl enable postgresql
             sudo systemctl start postgresql
             
@@ -154,6 +161,7 @@ jobs:
 
             # Configurar usuario y base de datos
             echo "=== Configurando usuario y base de datos ==="
+            # Usar sudo -u postgres para evitar problemas de autenticación
             sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || echo "Usuario no existía"
             sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';"
             sudo -u postgres psql -c "DROP DATABASE IF EXISTS LTIdb;" || echo "Base de datos no existía"
@@ -161,6 +169,10 @@ jobs:
             sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;"
             sudo -u postgres psql -c "ALTER USER LTIdbUser CREATEDB;"
             sudo -u postgres psql -c "ALTER USER LTIdbUser WITH SUPERUSER;"
+            
+            # Verificar que el usuario puede conectarse
+            echo "=== Verificando conexión del usuario ==="
+            sudo -u postgres psql -c "SELECT usename FROM pg_user WHERE usename = 'LTIdbUser';"
             
             # Verificar que el usuario y base de datos se crearon correctamente
             echo "=== Verificando configuración ==="
@@ -219,7 +231,8 @@ jobs:
 
             # Verificar conexión antes de aplicar esquema
             echo "=== Verificando conexión a base de datos ==="
-            PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq psql -h localhost -U LTIdbUser -d LTIdb -c "SELECT 1;" || echo "Error de conexión"
+            sudo -u postgres psql -c "SELECT 1;" || echo "Error de conexión con postgres"
+            PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq psql -h localhost -U LTIdbUser -d LTIdb -c "SELECT 1;" || echo "Error de conexión con LTIdbUser"
             
             # Aplicar esquema a base de datos
             echo "=== Aplicando esquema a base de datos ==="
