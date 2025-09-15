@@ -147,9 +147,12 @@ jobs:
             sudo systemctl start postgresql
 
             # Configurar usuario y base de datos
-            sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';" || true
-            sudo -u postgres psql -c "CREATE DATABASE LTIdb OWNER LTIdbUser;" || true
-            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;" || true
+            sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || true
+            sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';"
+            sudo -u postgres psql -c "DROP DATABASE IF EXISTS LTIdb;" || true
+            sudo -u postgres psql -c "CREATE DATABASE LTIdb OWNER LTIdbUser;"
+            sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;"
+            sudo -u postgres psql -c "ALTER USER LTIdbUser CREATEDB;"
 
             # Configurar PostgreSQL para conexiones externas
             sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /var/lib/pgsql/data/postgresql.conf
@@ -194,7 +197,7 @@ jobs:
             npx prisma generate
 
             # Aplicar esquema a base de datos
-            npx prisma db push
+            npx prisma db push --accept-data-loss --force-reset
 
             # Detener proceso anterior si existe
             pkill -f "node.*3010" || true
