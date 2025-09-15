@@ -52,7 +52,8 @@ jobs:
           cd backend
           echo "DATABASE_URL=\"postgresql://postgres:postgres@localhost:5432/test_db\"" > .env
           npx prisma generate
-          npx prisma db push
+          # Aplicar schema a la base de datos de test
+          npx prisma db push --accept-data-loss
 
       - name: 🧪 Ejecutar tests de backend
         run: |
