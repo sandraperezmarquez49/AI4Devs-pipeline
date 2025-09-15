@@ -170,6 +170,11 @@ jobs:
             sudo -u postgres psql -c "ALTER USER LTIdbUser CREATEDB;"
             sudo -u postgres psql -c "ALTER USER LTIdbUser WITH SUPERUSER;"
             
+            # Conectar a la base de datos específica y dar permisos
+            sudo -u postgres psql -d LTIdb -c "GRANT ALL PRIVILEGES ON SCHEMA public TO LTIdbUser;"
+            sudo -u postgres psql -d LTIdb -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO LTIdbUser;"
+            sudo -u postgres psql -d LTIdb -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO LTIdbUser;"
+            
             # Verificar que el usuario puede conectarse
             echo "=== Verificando conexión del usuario ==="
             sudo -u postgres psql -c "SELECT usename FROM pg_user WHERE usename = 'LTIdbUser';"
@@ -185,6 +190,7 @@ jobs:
             sudo sed -i "s/local   all             all                                     peer/local   all             all                                     md5/" /var/lib/pgsql/data/pg_hba.conf
             echo "host    all             all             0.0.0.0/0               md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
             echo "host    all             all             127.0.0.1/32            md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
+            echo "local   all             all                                     md5" | sudo tee -a /var/lib/pgsql/data/pg_hba.conf
 
             # Reiniciar PostgreSQL
             echo "=== Reiniciando PostgreSQL ==="
@@ -213,6 +219,9 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
+            # Crear y configurar directorio con permisos correctos
+            sudo mkdir -p /home/${{ secrets.EC2_USER }}/lti-backend
+            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/${{ secrets.EC2_USER }}/lti-backend
             cd /home/${{ secrets.EC2_USER }}/lti-backend
 
             # Crear archivo .env
@@ -232,6 +241,13 @@ jobs:
             # Verificar conexión antes de aplicar esquema
             echo "=== Verificando conexión a base de datos ==="
             sudo -u postgres psql -c "SELECT 1;" || echo "Error de conexión con postgres"
+            
+            # Verificar que el usuario LTIdbUser puede conectarse
+            echo "=== Verificando usuario LTIdbUser ==="
+            sudo -u postgres psql -c "SELECT usename FROM pg_user WHERE usename = 'LTIdbUser';"
+            sudo -u postgres psql -c "SELECT datname FROM pg_database WHERE datname = 'LTIdb';"
+            
+            # Probar conexión con LTIdbUser
             PGPASSWORD=D1ymf8wyQEGthFR1E9xhCq psql -h localhost -U LTIdbUser -d LTIdb -c "SELECT 1;" || echo "Error de conexión con LTIdbUser"
             
             # Aplicar esquema a base de datos
