@@ -146,7 +146,15 @@ jobs:
               echo "=== Inicializando PostgreSQL por primera vez ==="
               sudo postgresql-setup --initdb
             else
-              echo "=== PostgreSQL ya está configurado, saltando inicialización ==="
+              echo "=== PostgreSQL ya está configurado, limpiando configuración incorrecta ==="
+              # Detener PostgreSQL
+              sudo systemctl stop postgresql || true
+              # Hacer backup de la configuración actual
+              sudo cp -r /var/lib/pgsql/data /var/lib/pgsql/data.backup.$(date +%s) || true
+              # Limpiar directorio de datos
+              sudo rm -rf /var/lib/pgsql/data/*
+              # Recrear configuración
+              sudo postgresql-setup --initdb
             fi
             
             # Habilitar y iniciar PostgreSQL
@@ -155,9 +163,13 @@ jobs:
             
             # Esperar a que PostgreSQL esté completamente iniciado
             echo "=== Esperando a que PostgreSQL esté listo ==="
-            sleep 10
+            sleep 15
             sudo systemctl status postgresql
             sudo -u postgres pg_isready -h localhost -p 5432 || echo "PostgreSQL no está listo aún"
+            
+            # Configurar contraseña para usuario postgres
+            echo "=== Configurando contraseña para usuario postgres ==="
+            sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres123';" || echo "No se pudo configurar contraseña para postgres"
 
             # Configurar usuario y base de datos
             echo "=== Configurando usuario y base de datos ==="
@@ -249,10 +261,19 @@ EOF
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
-            # Asegurar que el directorio existe y tiene permisos correctos
+            # Asegurar que el directorio home del usuario existe
+            sudo mkdir -p /home/${{ secrets.EC2_USER }}
+            sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/${{ secrets.EC2_USER }}
+            sudo chmod 755 /home/${{ secrets.EC2_USER }}
+            
+            # Asegurar que el directorio de la aplicación existe y tiene permisos correctos
             sudo mkdir -p /home/${{ secrets.EC2_USER }}/lti-backend
             sudo chown -R ${{ secrets.EC2_USER }}:${{ secrets.EC2_USER }} /home/${{ secrets.EC2_USER }}/lti-backend
             sudo chmod 755 /home/${{ secrets.EC2_USER }}/lti-backend
+            
+            # Verificar permisos del directorio home
+            echo "=== Verificando permisos del directorio home ==="
+            ls -la /home/ | grep ${{ secrets.EC2_USER }}
             
             # Cambiar al directorio correcto
             cd /home/${{ secrets.EC2_USER }}/lti-backend
