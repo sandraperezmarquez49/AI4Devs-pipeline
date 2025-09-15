@@ -147,12 +147,19 @@ jobs:
             sudo systemctl start postgresql
 
             # Configurar usuario y base de datos
-            sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || true
+            echo "=== Configurando usuario y base de datos ==="
+            sudo -u postgres psql -c "DROP USER IF EXISTS LTIdbUser;" || echo "Usuario no existía"
             sudo -u postgres psql -c "CREATE USER LTIdbUser WITH PASSWORD 'D1ymf8wyQEGthFR1E9xhCq';"
-            sudo -u postgres psql -c "DROP DATABASE IF EXISTS LTIdb;" || true
+            sudo -u postgres psql -c "DROP DATABASE IF EXISTS LTIdb;" || echo "Base de datos no existía"
             sudo -u postgres psql -c "CREATE DATABASE LTIdb OWNER LTIdbUser;"
             sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE LTIdb TO LTIdbUser;"
             sudo -u postgres psql -c "ALTER USER LTIdbUser CREATEDB;"
+            sudo -u postgres psql -c "ALTER USER LTIdbUser WITH SUPERUSER;"
+            
+            # Verificar que el usuario y base de datos se crearon correctamente
+            echo "=== Verificando configuración ==="
+            sudo -u postgres psql -c "\du" | grep LTIdbUser || echo "Usuario LTIdbUser no encontrado"
+            sudo -u postgres psql -c "\l" | grep LTIdb || echo "Base de datos LTIdb no encontrada"
 
             # Configurar PostgreSQL para conexiones externas
             sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /var/lib/pgsql/data/postgresql.conf
@@ -197,7 +204,10 @@ jobs:
             npx prisma generate
 
             # Aplicar esquema a base de datos
+            echo "=== Aplicando esquema a base de datos ==="
+            echo "DATABASE_URL actual: $DATABASE_URL"
             npx prisma db push --accept-data-loss --force-reset
+            echo "=== Esquema aplicado exitosamente ==="
 
             # Detener proceso anterior si existe
             pkill -f "node.*3010" || true
